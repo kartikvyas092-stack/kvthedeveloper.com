@@ -78,11 +78,15 @@
 }
 
   
+
   #chat {
-    flex: 1;
-    display: none;
-    flex-direction: column;
-  }
+
+  display: none;   /* hidden until login */
+  position: relative;   
+  flex: 1;
+  flex-direction: column;
+}
+
   #chat-box {
     flex: 1;
     overflow-y: auto;
@@ -91,6 +95,55 @@
     flex-direction: column;
     background: #111;
   }
+  #gif-panel {
+  position: absolute;       /* float instead of inline */
+  bottom: 60px;             /* sits just above footer */
+  left: 0;
+  right: 0;
+  background: #111;
+  padding: 10px;
+  border-top: 1px solid #333;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;            /* ensures it overlays chat */
+  animation: slideUp 0.3s ease; /* optional smooth effect */
+ transition: all 0.3s ease;
+ [style*="display: none"] 
+  opacity: 0;
+  transform: translateY(20px);
+
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+#gif-search {
+  width: 100%;
+  padding: 8px;
+  border-radius: 20px;
+  border: none;
+  outline: none;
+  background: #222;
+  color: #fff;
+  margin-bottom: 10px;
+}
+#gif-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 100px);
+  gap: 8px;
+}
+#gif-results img {
+  width: 100px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+#gif-results img:hover {
+  transform: scale(1.1);
+}
+
   .message {
     max-width: 70%;
     margin: 0.5em;
@@ -127,6 +180,7 @@
     padding: 0.5em;
     background: rgba(255, 255, 255, 0.05);
   }
+  
   input[type="text"] {
     flex: 1;
     padding: 0.8em;
@@ -149,6 +203,14 @@
     font-size: 1.2em;
     box-shadow: 0 0 10px #69cbffff;
   }
+  .message img.gif-message {
+  max-width: 180px;
+  border-radius: 12px;
+  display: block;
+  margin-top: 5px;
+  box-shadow: 0 0 10px rgba(105, 255, 245, 0.5);
+}
+
 </style>
 </head>
 <body>
@@ -166,9 +228,14 @@
 <div id="chat">
   <div id="chat-box"></div>
   <footer>
-    <input type="text" id="message-input" placeholder="Type a message...">
-    <button onclick="sendMessage()">➤</button>
+   <input type="text" id="message-input" placeholder="Type a message...">
+    <button id="sendBtn">➤</button>
     
+<div id="gif-panel" style="display:none;">
+  <input type="text" id="gif-search" placeholder="Search GIFs...">
+  <div id="gif-results"></div>
+</div>
+<button id="gif-toggle">🎞️ GIF</button>
 
   </footer>
 </div>
@@ -201,24 +268,32 @@ const firebaseConfig = {
     document.getElementById("chat").style.display = "flex";
   }
 
-  window.sendMessage = function() {
-    const input = document.getElementById("message-input");
-    const text = input.value.trim();
-    if (!text || !myName) return;
-    push(ref(db, "messages"), {
-      type: "text",
-      text: text,
-      sender: myName,
-      timestamp: Date.now()
-    });
-    input.value = "";
-  };
-  document.getElementById("message-input").addEventListener("keydown", function(event) {
+const input = document.getElementById("message-input");
+const sendBtn = document.getElementById("sendBtn");
+
+function sendMessage() {
+  const text = input.value.trim();
+  if (!text || !myName) return;
+
+  push(ref(db, "messages"), {
+    type: "text",
+    text,
+    sender: myName,
+    timestamp: Date.now()
+  });
+
+  input.value = "";
+}
+
+// ✅ Only one binding per action
+sendBtn.addEventListener("click", sendMessage);
+input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault(); 
-    window.sendMessage();
+    event.preventDefault();
+    sendMessage();
   }
 });
+
 
   function formatTime(ms) {
     const date = new Date(ms);
@@ -228,32 +303,86 @@ const firebaseConfig = {
     hours = hours % 12 || 12;
     return `${hours}:${minutes} ${ampm}`;
   }
+onChildAdded(ref(db, "messages"), (snapshot) => {
+  const data = snapshot.val();
+  const msg = document.createElement("div");
+  msg.className = "message " + (data.sender === myName ? "sent" : "received");
 
-  onChildAdded(ref(db, "messages"), (snapshot) => {
-    const data = snapshot.val();
-    const msg = document.createElement("div");
-    msg.className = "message " + (data.sender === myName ? "sent" : "received");
+  const senderLabel = document.createElement("div");
+  senderLabel.className = "sender";
+  senderLabel.textContent = data.sender;
 
-    const senderLabel = document.createElement("div");
-    senderLabel.className = "sender";
-    senderLabel.textContent = data.sender;
+  // Content area
+  let content;
+  if (data.type === "gif") {
+    content = document.createElement("img");
+    content.src = data.url;
+    content.className = "gif-message";
+  } else {
+    content = document.createElement("div");
+    content.textContent = data.text;
+  }
+// Close GIF panel when clicking outside
+document.addEventListener("click", (e) => {
+  const isClickInside = gifPanel.contains(e.target) || gifToggle.contains(e.target);
+  if (!isClickInside) {
+    gifPanel.style.display = "none";
+  }
+});
 
-    const textNode = document.createElement("div");
-    textNode.textContent = data.text;
+  const timeLabel = document.createElement("div");
+  timeLabel.className = "timestamp";
+  timeLabel.textContent = formatTime(data.timestamp);
 
-    const timeLabel = document.createElement("div");
-    timeLabel.className = "timestamp";
-    timeLabel.textContent = formatTime(data.timestamp);
+  msg.appendChild(senderLabel);
+  msg.appendChild(content);
+  msg.appendChild(timeLabel);
 
-    msg.appendChild(senderLabel);
-    msg.appendChild(textNode);
-    msg.appendChild(timeLabel);
+  chatBox.appendChild(msg);
 
-    chatBox.appendChild(msg);
-chatBox.scrollTop = chatBox.scrollHeight;
-document.querySelector("footer").scrollIntoView({ behavior: "smooth", block: "end" });
+  // Auto scroll
+  chatBox.scrollTop = chatBox.scrollHeight;
+  document.querySelector("footer").scrollIntoView({ behavior: "smooth", block: "end" });
+});
 
-  });
+
+
+  const gifPanel = document.getElementById("gif-panel");
+const gifToggle = document.getElementById("gif-toggle");
+const gifSearch = document.getElementById("gif-search");
+const gifResults = document.getElementById("gif-results");
+
+const GIPHY_KEY = "593h4BgJ8UrK3FBYb4uNZZQRLvtjEF2f"; 
+
+gifToggle.addEventListener("click", () => {
+  gifPanel.style.display = gifPanel.style.display === "none" ? "block" : "none";
+});
+
+gifSearch.addEventListener("keydown", async (e) => {
+  if (e.key === "Enter") {
+    const q = gifSearch.value.trim();
+    if (!q) return;
+    const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=12`);
+    const data = await res.json();
+    gifResults.innerHTML = "";
+    data.data.forEach(gif => {
+      const img = document.createElement("img");
+      img.src = gif.images.fixed_height_small.url;
+      img.addEventListener("click", () => {
+        push(ref(db, "messages"), {
+          type: "gif",
+          url: gif.images.original.url,
+          sender: myName,
+          timestamp: Date.now()
+        });
+        gifPanel.style.display = "none";
+      });
+      gifResults.appendChild(img);
+    });
+  }
+});
+
+  
 </script>
 </body>
 </html>
