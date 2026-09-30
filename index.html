@@ -22,7 +22,7 @@
     color: #7869ffff;
     text-shadow: 0 0 10px #69d5ffff;
   }
-  #login {
+  #pin-screen {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -30,6 +30,72 @@
   align-items: center;
   background: #111;
   color: #fff;
+}
+
+#pin-screen p {
+  margin-bottom: 1em;
+  opacity: 0.8;
+}
+
+#pin-inputs {
+  display: flex;
+  gap: 0.6em;
+}
+
+.pin-digit {
+  width: 45px;
+  height: 55px;
+  text-align: center;
+  font-size: 1.5em;
+  border: none;
+  border-radius: 10px;
+  outline: none;
+  background: #222;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(64, 88, 244, 0.4);
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
+.pin-digit.error {
+  animation: shake 0.3s;
+  box-shadow: 0 0 10px rgba(255, 60, 60, 0.7);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+  #login {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: #111;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+#login::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("YOUR_IMAGE_URL_HERE.jpg");
+  background-size: cover;
+  background-position: center;
+  opacity: 0.6;
+  z-index: 0;
+}
+
+#login label,
+#login #userSelect,
+#login button {
+  position: relative;
+  z-index: 1;
 }
 
 #userSelect {
@@ -144,6 +210,24 @@
   transform: scale(1.1);
 }
 
+#status-bar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-weight: bold;
+}
+
+.online {
+  color: green;
+}
+.offline {
+  color: red;
+}
+
+        
   .message {
     max-width: 70%;
     margin: 0.5em;
@@ -151,6 +235,11 @@
     border-radius: 10px;
     font-size: 0.95em;
     display: flex;
+    flex-wrap: wrap;
+    white-space: normal;       
+  word-break: break-word;    
+  overflow-wrap: anywhere;
+  align-items: flex-start;
     flex-direction: column;
     box-shadow: 0 0 8px rgba(50, 87, 219, 0.3);
   }
@@ -216,7 +305,18 @@
 <body>
 <header>K & K chat!💕😘 </header>
 
+<div id="pin-screen">
+  <p>Enter PIN</p>
+  <div id="pin-inputs">
+    <input type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="1" class="pin-digit" data-index="0">
+    <input type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="1" class="pin-digit" data-index="1">
+    <input type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="1" class="pin-digit" data-index="2">
+    <input type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="1" class="pin-digit" data-index="3">
+  </div>
+</div>
+
 <div id="login">
+  
   <label for="userSelect">Choose who you are:</label>
   <select id="userSelect">
     <option value="Kartu">Kartik</option>
@@ -230,7 +330,11 @@
   <footer>
    <input type="text" id="message-input" placeholder="Type a message...">
     <button id="sendBtn">➤</button>
-    
+  
+
+
+
+
 <div id="gif-panel" style="display:none;">
   <input type="text" id="gif-search" placeholder="Search GIFs...">
   <div id="gif-results"></div>
@@ -244,6 +348,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
   import { getDatabase, ref, push, onChildAdded } 
     from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
+
 
  
 const firebaseConfig = {
@@ -262,11 +367,70 @@ const firebaseConfig = {
   let myName = null;
   const chatBox = document.getElementById("chat-box");
 
-  window.enterChat = function() {
-    myName = document.getElementById("userSelect").value;
-    document.getElementById("login").style.display = "none";
-    document.getElementById("chat").style.display = "flex";
+  // --- PIN gate ---
+  const PIN_CODE = "2626"; // 🔑 change this to your own 4-digit PIN
+  const pinScreen = document.getElementById("pin-screen");
+  const loginScreen = document.getElementById("login");
+  const pinDigits = Array.from(document.querySelectorAll(".pin-digit"));
+
+  pinDigits[0].focus();
+
+  function handleDigitInput(digit, i) {
+    digit.value = digit.value.replace(/[^0-9]/g, "").slice(0, 1);
+    digit.classList.remove("error");
+
+    if (digit.value && i < pinDigits.length - 1) {
+      pinDigits[i + 1].focus();
+    }
+
+    if (pinDigits.every(d => d.value.length === 1)) {
+      checkPin();
+    }
   }
+
+  pinDigits.forEach((digit, i) => {
+    digit.addEventListener("input", () => handleDigitInput(digit, i));
+    digit.addEventListener("keyup", () => handleDigitInput(digit, i));
+
+    digit.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace" && !digit.value && i > 0) {
+        pinDigits[i - 1].focus();
+      }
+    });
+
+    digit.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const pasted = (e.clipboardData || window.clipboardData).getData("text").replace(/[^0-9]/g, "");
+      pinDigits.forEach((d, idx) => {
+        d.value = pasted[idx] || "";
+      });
+      const nextEmpty = pinDigits.findIndex(d => !d.value);
+      (nextEmpty === -1 ? pinDigits[pinDigits.length - 1] : pinDigits[nextEmpty]).focus();
+      if (pinDigits.every(d => d.value.length === 1)) {
+        checkPin();
+      }
+    });
+  });
+
+  function checkPin() {
+    const entered = pinDigits.map(d => d.value).join("");
+    if (entered === PIN_CODE) {
+      pinScreen.style.display = "none";
+      loginScreen.style.display = "flex";
+    } else {
+      pinDigits.forEach(d => {
+        d.classList.add("error");
+        d.value = "";
+      });
+      pinDigits[0].focus();
+    }
+  }
+  // --- end PIN gate ---
+
+window.enterChat = function()
+ { myName = document.getElementById("userSelect").value;
+  document.getElementById("login").style.display = "none";
+   document.getElementById("chat").style.display = "flex"; }
 
 const input = document.getElementById("message-input");
 const sendBtn = document.getElementById("sendBtn");
@@ -303,6 +467,8 @@ input.addEventListener("keydown", (event) => {
     hours = hours % 12 || 12;
     return `${hours}:${minutes} ${ampm}`;
   }
+  
+
 onChildAdded(ref(db, "messages"), (snapshot) => {
   const data = snapshot.val();
   const msg = document.createElement("div");
@@ -382,7 +548,22 @@ gifSearch.addEventListener("keydown", async (e) => {
   }
 });
 
-  
+function sendImage() {
+  const url = document.getElementById("imageUrlInput").value;
+  if (!url) return;
+
+  push(ref(db, "messages"), {
+    name: window.myName,
+    type: "image",
+    url: url,
+    timestamp: Date.now()
+  });
+
+  document.getElementById("imageUrlInput").value = "";
+}
+
+
+
 </script>
 </body>
 </html>
