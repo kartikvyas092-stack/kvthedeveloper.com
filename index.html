@@ -198,14 +198,26 @@
   .message-row.received { align-self:flex-start; }
 
   .avatar {
-    width:38px; height:38px; min-width:38px; border-radius:50%;
+    width:42px; height:42px; min-width:42px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
     font-size:1.15em; flex-shrink:0;
+    padding:3px;
     box-shadow:0 0 14px rgba(255,179,198,0.45);
     animation: floatAvatar 3.2s ease-in-out infinite;
   }
   .avatar.avatar-a { background: linear-gradient(135deg, var(--pink), var(--peach)); }
   .avatar.avatar-b { background: linear-gradient(135deg, var(--lav), var(--mint)); }
+  .avatar img {
+    width:100%; height:100%; border-radius:50%;
+    object-fit: cover;
+    border: 2px solid var(--bg-deep);
+    display:block;
+  }
+  .avatar .emoji-fallback {
+    width:100%; height:100%; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background: var(--bg-mid);
+  }
   @keyframes floatAvatar { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-4px);} }
 
   .message {
@@ -318,13 +330,30 @@
   let myName = null;
   const chatBox = document.getElementById("chat-box");
 
-  // --- avatars: emoji + gradient per sender ---
+  // --- avatars: photo in a gradient-ring frame, with emoji fallback ---
+  // Set img to your own photo URL. Leave it as "" to keep the emoji fallback.
   const AVATARS = {
-  Kartu: { img: "image (1).png", emoji: "🧸", cls: "avatar-a" },
-  Kahu:  { img: "image (2).png", emoji: "🦋", cls: "avatar-b" }
-};
+    Kartu: { img src="image (1).png", emoji: "🧸", cls: "avatar-a" },
+    Kahu:  { img src="image (2).png", emoji: "🦋", cls: "avatar-b" }
+  };
   function getAvatar(name) {
-    return AVATARS[name] || { emoji: "💌", cls: "avatar-a" };
+    return AVATARS[name] || { img: "", emoji: "💌", cls: "avatar-a" };
+  }
+  function buildAvatarEl(info) {
+    const wrap = document.createElement("div");
+    wrap.className = "avatar " + info.cls;
+    if (info.img) {
+      const img = document.createElement("img");
+      img.src = info.img;
+      img.alt = "";
+      wrap.appendChild(img);
+    } else {
+      const fb = document.createElement("div");
+      fb.className = "emoji-fallback";
+      fb.textContent = info.emoji;
+      wrap.appendChild(fb);
+    }
+    return wrap;
   }
 
   // --- PIN gate ---
@@ -428,9 +457,7 @@
     row.className = "message-row " + (isMe ? "sent" : "received");
 
     const avatarInfo = getAvatar(data.sender);
-    const avatar = document.createElement("div");
-    avatar.className = "avatar " + avatarInfo.cls;
-    avatar.textContent = avatarInfo.emoji;
+    const avatar = buildAvatarEl(avatarInfo);
 
     const msg = document.createElement("div");
     msg.className = "message";
