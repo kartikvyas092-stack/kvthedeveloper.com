@@ -161,7 +161,12 @@
     color:#201529; font-family:'Fredoka',sans-serif; font-weight:600; font-size:0.9em;
     cursor:pointer; box-shadow: 0 0 14px rgba(185,243,223,0.4);
   }
-  #thoughtsList { margin-top: 0.8em; max-height: 140px; overflow-y: auto; text-align:left; display:flex; flex-direction:column; gap:0.5em; }
+  #thoughtsList {
+    margin-top: 0.8em; max-height: 140px; overflow-y: auto; text-align:left;
+    display:flex; flex-direction:column; gap:0.5em;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(185,243,223,0.4) transparent;
+  }
   .thought-item {
     background: rgba(255,255,255,0.04); border-radius: 12px; padding: 0.5em 0.7em;
     font-size: 0.82em; line-height:1.3;
@@ -174,6 +179,27 @@
   #chat-box {
     flex: 1; overflow-y: auto; padding: 1em;
     display: flex; flex-direction: column; gap: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,179,198,0.4) transparent;
+  }
+  #chat-box::-webkit-scrollbar,
+  #thoughtsList::-webkit-scrollbar,
+  #gif-panel::-webkit-scrollbar,
+  #pin-screen::-webkit-scrollbar {
+    width: 6px;
+  }
+  #chat-box::-webkit-scrollbar-track,
+  #thoughtsList::-webkit-scrollbar-track,
+  #gif-panel::-webkit-scrollbar-track,
+  #pin-screen::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #chat-box::-webkit-scrollbar-thumb,
+  #thoughtsList::-webkit-scrollbar-thumb,
+  #gif-panel::-webkit-scrollbar-thumb,
+  #pin-screen::-webkit-scrollbar-thumb {
+    background: linear-gradient(var(--pink), var(--lav));
+    border-radius: 10px;
   }
 
   #gif-panel {
