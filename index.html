@@ -225,6 +225,35 @@
   .message-row.sent { align-self:flex-end; flex-direction:row-reverse; }
   .message-row.received { align-self:flex-start; }
 
+  .bubble-wrap { position:relative; display:flex; flex-direction:column; min-width:0; }
+  .message { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  .react-trigger {
+    align-self:center; flex-shrink:0; width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:0.85em;
+    cursor:pointer; opacity:0.45; background:var(--panel); border:1px solid var(--panel-border);
+    user-select:none; transition: opacity .2s, transform .2s;
+  }
+  .react-trigger:hover { opacity:1; transform:scale(1.12); }
+  .reaction-picker {
+    position:absolute; bottom:calc(100% + 6px); display:flex; gap:4px; padding:6px 10px;
+    background:var(--bg-mid); border:1px solid var(--panel-border); border-radius:22px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.45); z-index:50; animation: popIn .18s ease;
+  }
+  .sent .reaction-picker { right:0; }
+  .received .reaction-picker { left:0; }
+  .reaction-picker span { font-size:1.35em; cursor:pointer; transition: transform .15s; user-select:none; }
+  .reaction-picker span:hover { transform: scale(1.35) translateY(-2px); }
+  @keyframes popIn { from{transform:scale(.7);opacity:0;} to{transform:scale(1);opacity:1;} }
+  .reactions { display:flex; gap:4px; flex-wrap:wrap; margin-top:-4px; }
+  .reactions:not(:empty) { margin-bottom:4px; }
+  .sent .reactions { justify-content:flex-end; padding-right:8px; }
+  .received .reactions { padding-left:8px; }
+  .reaction-chip {
+    font-size:0.8em; background:var(--bg-mid); border:1px solid var(--panel-border);
+    border-radius:12px; padding:1px 7px; cursor:pointer; user-select:none;
+  }
+  .reaction-chip.mine { border-color:var(--pink); background:rgba(255,179,198,0.2); }
+
   .avatar {
     width:42px; height:42px; min-width:42px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
@@ -339,7 +368,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-  import { getDatabase, ref, push, onChildAdded }
+  import { getDatabase, ref, push, set, remove, onValue, onChildAdded }
     from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
 
   const firebaseConfig = {
@@ -428,6 +457,7 @@
     myName = document.getElementById("userSelect").value;
     document.getElementById("login").style.display = "none";
     document.getElementById("chat").style.display = "flex";
+    startMessages();
   };
 
   // --- thoughts, written on the login screen, stored in Realtime Database ---
@@ -477,47 +507,156 @@
     return `${hours}:${minutes} ${ampm}`;
   }
 
-  onChildAdded(ref(db, "messages"), (snapshot) => {
-    const data = snapshot.val();
-    const isMe = data.sender === myName;
+  // --- reactions ---
+  const REACTION_EMOJIS = ["❤️", "😂", "😮", "🥺", "👍", "🔥"];
+  const msgEls = {};          // messageKey -> reactions container element
+  let reactionsData = {};     // messageKey -> { senderName: emoji }
 
-    const row = document.createElement("div");
-    row.className = "message-row " + (isMe ? "sent" : "received");
+  function toggleReaction(key, emoji) {
+    if (!myName) return;
+    const r = ref(db, `reactions/${key}/${myName}`);
+    if (reactionsData[key] && reactionsData[key][myName] === emoji) remove(r);
+    else set(r, emoji);
+  }
 
-    const avatarInfo = getAvatar(data.sender);
-    const avatar = buildAvatarEl(avatarInfo);
+  function renderReactions(key) {
+    const box = msgEls[key];
+    if (!box) return;
+    box.innerHTML = "";
+    const byEmoji = {};
+    Object.entries(reactionsData[key] || {}).forEach(([who, emoji]) => {
+      (byEmoji[emoji] = byEmoji[emoji] || []).push(who);
+    });
+    Object.entries(byEmoji).forEach(([emoji, who]) => {
+      const chip = document.createElement("span");
+      chip.className = "reaction-chip" + (who.includes(myName) ? " mine" : "");
+      chip.textContent = who.length > 1 ? `${emoji} ${who.length}` : emoji;
+      chip.title = who.join(", ");
+      chip.addEventListener("click", () => toggleReaction(key, emoji));
+      box.appendChild(chip);
+    });
+  }
 
-    const msg = document.createElement("div");
-    msg.className = "message";
+  function closePickers() {
+    document.querySelectorAll(".reaction-picker").forEach(p => p.remove());
+  }
+  document.addEventListener("click", closePickers);
 
-    const senderLabel = document.createElement("div");
-    senderLabel.className = "sender";
-    senderLabel.textContent = data.sender;
+  let messagesStarted = false;
+  function startMessages() {
+    if (messagesStarted) return;
+    messagesStarted = true;
 
-    let content;
-    if (data.type === "gif") {
-      content = document.createElement("img");
-      content.src = data.url;
-      content.className = "gif-message";
-    } else {
-      content = document.createElement("div");
-      content.textContent = data.text;
-    }
+    onValue(ref(db, "reactions"), (snap) => {
+      reactionsData = snap.val() || {};
+      Object.keys(msgEls).forEach(renderReactions);
+    });
 
-    const timeLabel = document.createElement("div");
-    timeLabel.className = "timestamp";
-    timeLabel.textContent = formatTime(data.timestamp);
+    onChildAdded(ref(db, "messages"), (snapshot) => {
+      const key = snapshot.key;
+      const data = snapshot.val();
+      const isMe = data.sender === myName;
 
-    msg.appendChild(senderLabel);
-    msg.appendChild(content);
-    msg.appendChild(timeLabel);
+      const row = document.createElement("div");
+      row.className = "message-row " + (isMe ? "sent" : "received");
 
-    row.appendChild(avatar);
-    row.appendChild(msg);
-    chatBox.appendChild(row);
+      const avatar = buildAvatarEl(getAvatar(data.sender));
 
-    chatBox.scrollTop = chatBox.scrollHeight;
-  });
+      const wrap = document.createElement("div");
+      wrap.className = "bubble-wrap";
+
+      const msg = document.createElement("div");
+      msg.className = "message";
+
+      const senderLabel = document.createElement("div");
+      senderLabel.className = "sender";
+      senderLabel.textContent = data.sender;
+
+      let content;
+      if (data.type === "gif") {
+        content = document.createElement("img");
+        content.src = data.url;
+        content.className = "gif-message";
+      } else {
+        content = document.createElement("div");
+        content.textContent = data.text;
+      }
+
+      const timeLabel = document.createElement("div");
+      timeLabel.className = "timestamp";
+      timeLabel.textContent = formatTime(data.timestamp);
+
+      msg.appendChild(senderLabel);
+      msg.appendChild(content);
+      msg.appendChild(timeLabel);
+
+      // double-tap / double-click = ❤️ (like Instagram)
+      msg.addEventListener("dblclick", () => toggleReaction(key, "❤️"));
+
+      const reactionsBox = document.createElement("div");
+      reactionsBox.className = "reactions";
+      msgEls[key] = reactionsBox;
+
+      wrap.appendChild(msg);
+      wrap.appendChild(reactionsBox);
+
+      // reaction picker trigger
+      const trigger = document.createElement("div");
+      trigger.className = "react-trigger";
+      trigger.textContent = "☺";
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const already = wrap.querySelector(".reaction-picker");
+        closePickers();
+        if (already) return;
+        const picker = document.createElement("div");
+        picker.className = "reaction-picker";
+        REACTION_EMOJIS.forEach(em => {
+          const o = document.createElement("span");
+          o.textContent = em;
+          o.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            toggleReaction(key, em);
+            closePickers();
+          });
+          picker.appendChild(o);
+        });
+        wrap.appendChild(picker);
+      });
+
+      row.appendChild(avatar);
+      row.appendChild(wrap);
+      row.appendChild(trigger);
+      chatBox.appendChild(row);
+
+      renderReactions(key);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+  }
+  // --- end reactions ---
+
+  // --- emoticon shortcuts: :) -> 😁 etc ---
+  const EMOTICONS = [
+    [":'(", "😭"], [":)", "😁"], [":(", "🥺"], [":P", "😜"], [":p", "😜"],
+    [":D", "😄"], [";)", "😉"], [":O", "😮"], [":o", "😮"], [":*", "😘"], ["<3", "❤️"]
+  ];
+  const EMO_RE = new RegExp(EMOTICONS.map(([k]) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
+  const EMO_MAP = Object.fromEntries(EMOTICONS);
+  function attachEmoticons(el) {
+    el.addEventListener("input", () => {
+      const before = el.value;
+      const after = before.replace(EMO_RE, m => EMO_MAP[m]);
+      if (after !== before) {
+        const pos = el.selectionStart;
+        el.value = after;
+        const np = Math.max(0, pos + (after.length - before.length));
+        el.setSelectionRange(np, np);
+      }
+    });
+  }
+  attachEmoticons(document.getElementById("message-input"));
+  attachEmoticons(document.getElementById("thoughtInput"));
+  // --- end emoticons ---
 
   // Close GIF panel when clicking outside
   document.addEventListener("click", (e) => {
