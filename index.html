@@ -226,6 +226,28 @@
   .message-row.received { align-self:flex-start; }
 
   .bubble-wrap { position:relative; display:flex; flex-direction:column; min-width:0; }
+  .typing-pop {
+    position:absolute; left:12px; bottom:72px; display:none; align-items:center; gap:0.5em;
+    padding:0.35em 0.85em 0.35em 0.4em; background:var(--bg-mid);
+    border:1px solid var(--panel-border); border-radius:22px; font-size:0.82em;
+    color:var(--text-dim); box-shadow:0 6px 20px rgba(0,0,0,0.45); z-index:900;
+    animation: popIn .2s ease;
+  }
+  .typing-pop .avatar.mini { width:26px; height:26px; min-width:26px; padding:2px; animation:none; box-shadow:none; }
+  .typing-pop .avatar.mini .emoji-fallback { font-size:0.8em; }
+  .typing-pop .dots i {
+    display:inline-block; width:5px; height:5px; margin-left:3px; border-radius:50%;
+    background:var(--pink); animation: bounceDot 1.1s infinite ease-in-out;
+  }
+  .typing-pop .dots i:nth-child(2) { animation-delay:.15s; }
+  .typing-pop .dots i:nth-child(3) { animation-delay:.3s; }
+  @keyframes bounceDot { 0%,60%,100%{transform:translateY(0);opacity:.5;} 30%{transform:translateY(-4px);opacity:1;} }
+  .toast {
+    position:fixed; left:50%; bottom:90px; transform:translateX(-50%);
+    background:var(--bg-mid); border:1px solid var(--panel-border); color:var(--text);
+    padding:0.5em 1.1em; border-radius:20px; font-size:0.9em; z-index:2000;
+    box-shadow:0 6px 20px rgba(0,0,0,0.45); animation: popIn .2s ease;
+  }
   .message { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
   .react-trigger {
     align-self:center; flex-shrink:0; width:26px; height:26px; border-radius:50%;
@@ -355,6 +377,7 @@
 
 <div id="chat">
   <div id="chat-box"></div>
+  <div id="typing-pop" class="typing-pop"></div>
   <footer>
     <input type="text" id="message-input" placeholder="Type a message...">
     <button id="sendBtn">➤</button>
@@ -368,7 +391,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-  import { getDatabase, ref, push, set, remove, onValue, onChildAdded }
+  import { getDatabase, ref, push, set, remove, onValue, onDisconnect, onChildAdded }
     from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
 
   const firebaseConfig = {
@@ -492,6 +515,7 @@
     if (!text || !myName) return;
     push(ref(db, "messages"), { type: "text", text, sender: myName, timestamp: Date.now() });
     input.value = "";
+    setTyping(false);
   }
   sendBtn.addEventListener("click", sendMessage);
   input.addEventListener("keydown", (event) => {
@@ -542,10 +566,81 @@
   }
   document.addEventListener("click", closePickers);
 
+  function showToast(text) {
+    document.querySelectorAll(".toast").forEach(t => t.remove());
+    const t = document.createElement("div");
+    t.className = "toast";
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 1400);
+  }
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+    }
+    showToast("Copied 💕");
+  }
+
+  // --- typing indicator ---
+  const NAMES = { Kartu: "Kartik", Kahu: "Kahaani" };
+  const typingPop = document.getElementById("typing-pop");
+  let typingTimer = null, isTyping = false;
+
+  function setTyping(on) {
+    if (!myName) return;
+    const r = ref(db, `typing/${myName}`);
+    if (on) {
+      if (!isTyping) {
+        isTyping = true;
+        set(r, true);
+        onDisconnect(r).remove();
+      }
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => setTyping(false), 2500);
+    } else {
+      clearTimeout(typingTimer);
+      if (isTyping) { isTyping = false; remove(r); }
+    }
+  }
+  document.getElementById("message-input").addEventListener("input", (e) => {
+    setTyping(e.target.value.length > 0);
+  });
+
+  function listenTyping() {
+    onValue(ref(db, "typing"), (snap) => {
+      const val = snap.val() || {};
+      const others = Object.keys(val).filter(n => n !== myName);
+      if (!others.length) { typingPop.style.display = "none"; return; }
+      const who = others[0];
+      const av = buildAvatarEl(getAvatar(who));
+      av.classList.add("mini");
+      const txt = document.createElement("span");
+      txt.textContent = `${NAMES[who] || who} is typing`;
+      const dots = document.createElement("span");
+      dots.className = "dots";
+      dots.innerHTML = "<i></i><i></i><i></i>";
+      typingPop.innerHTML = "";
+      typingPop.append(av, txt, dots);
+      typingPop.style.display = "flex";
+    });
+  }
+  // --- end typing indicator ---
+
   let messagesStarted = false;
   function startMessages() {
     if (messagesStarted) return;
     messagesStarted = true;
+
+    listenTyping();
 
     onValue(ref(db, "reactions"), (snap) => {
       reactionsData = snap.val() || {};
@@ -590,8 +685,20 @@
       msg.appendChild(content);
       msg.appendChild(timeLabel);
 
-      // double-tap / double-click = ❤️ (like Instagram)
-      msg.addEventListener("dblclick", () => toggleReaction(key, "❤️"));
+      // double-tap = ❤️ (like Instagram), triple-tap = copy text
+      let taps = 0, tapTimer, heartTimer;
+      msg.addEventListener("click", () => {
+        taps++;
+        clearTimeout(tapTimer);
+        tapTimer = setTimeout(() => { taps = 0; }, 450);
+        if (taps === 2) {
+          heartTimer = setTimeout(() => toggleReaction(key, "❤️"), 450);
+        } else if (taps === 3) {
+          clearTimeout(heartTimer);
+          taps = 0;
+          copyText(data.type === "gif" ? data.url : data.text);
+        }
+      });
 
       const reactionsBox = document.createElement("div");
       reactionsBox.className = "reactions";
