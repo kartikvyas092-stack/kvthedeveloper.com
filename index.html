@@ -293,6 +293,15 @@
     15% { opacity:1; }
     100% { transform:translate(var(--dx), var(--dy)) scale(1.1) rotate(var(--rot)); opacity:0; }
   }
+  /* /emoji wall */
+  .emoji-wall { position:fixed; inset:0; z-index:2900; pointer-events:none; overflow:hidden; }
+  .emoji-rise { position:absolute; bottom:-4rem; margin-left:-0.5em; opacity:0; animation: emojiRise 3s ease-in both; }
+  @keyframes emojiRise {
+    0%   { transform: translate(0, 0) scale(0.6) rotate(0deg); opacity:0; }
+    12%  { opacity:1; }
+    80%  { opacity:1; }
+    100% { transform: translate(var(--sway), -118vh) scale(1.15) rotate(var(--rot)); opacity:0; }
+  }
   .typing-pop {
     position:absolute; left:12px; bottom:72px; display:none; align-items:center; gap:0.5em;
     padding:0.35em 0.85em 0.35em 0.4em; background:var(--bg-mid);
@@ -589,6 +598,12 @@
       clearChat();
       return;
     }
+    if (/^\/emoji\b/i.test(text)) {
+      input.value = "";
+      setTyping(false);
+      sendEmojiWall(text.replace(/^\/emoji\s*/i, ""));
+      return;
+    }
     if (text.toLowerCase() === "/kiss") {
       input.value = "";
       setTyping(false);
@@ -864,6 +879,50 @@
     setTimeout(() => ov.remove(), 4600);
   }
 
+  // --- /emoji "😍": a wall of emojis rises up the screen (plays for the other person when they open the chat) ---
+  const EMOJI_RE = /\p{Extended_Pictographic}(?:\uFE0F|\u20E3|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
+  const fxQueue = [];
+  let fxPlaying = false;
+  function queueEmojiWall(list) {
+    if (fxQueue.length >= 3) return;
+    fxQueue.push(list);
+    if (!fxPlaying) nextFx();
+  }
+  function nextFx() {
+    const list = fxQueue.shift();
+    if (!list) { fxPlaying = false; return; }
+    fxPlaying = true;
+    playEmojiWall(list);
+    setTimeout(nextFx, 3200);
+  }
+  function playEmojiWall(emojis) {
+    const wall = document.createElement("div");
+    wall.className = "emoji-wall";
+    const cols = Math.max(6, Math.min(14, Math.floor(window.innerWidth / 46)));
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < 5; r++) {
+        const e = document.createElement("span");
+        e.className = "emoji-rise";
+        e.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        e.style.left = ((c + 0.5) / cols * 100 + (Math.random() * 4 - 2)) + "%";
+        e.style.fontSize = (1.8 + Math.random() * 1.6) + "rem";
+        e.style.animationDuration = (2.4 + Math.random() * 1.2) + "s";
+        e.style.animationDelay = (Math.random() * 0.8 + r * 0.4) + "s";
+        e.style.setProperty("--sway", (Math.random() * 60 - 30) + "px");
+        e.style.setProperty("--rot", (Math.random() * 40 - 20) + "deg");
+        wall.appendChild(e);
+      }
+    }
+    document.body.appendChild(wall);
+    setTimeout(() => wall.remove(), 6200);
+  }
+  function sendEmojiWall(arg) {
+    const found = (arg.match(EMOJI_RE) || []).slice(0, 6);
+    if (!found.length) { showToast('Try /emoji "😍" 💕'); return; }
+    queueEmojiWall(found);
+    push(ref(db, "emojiFx"), { emojis: found, sender: myName, timestamp: serverTimestamp() });
+  }
+
   let messagesStarted = false;
   function startMessages() {
     if (messagesStarted) return;
@@ -872,6 +931,18 @@
     listenTyping();
 
     onValue(ref(db, ".info/serverTimeOffset"), (s) => { serverOffset = s.val() || 0; });
+
+    // emoji walls sent by the other person: play now, or as soon as this chat is opened
+    const seenFx = new Set();
+    onChildAdded(ref(db, "emojiFx"), (snap) => {
+      const d = snap.val();
+      if (!d || d.sender === myName || seenFx.has(snap.key)) return;
+      seenFx.add(snap.key);
+      remove(ref(db, "emojiFx/" + snap.key));
+      if (typeof d.timestamp === "number" && Date.now() + serverOffset - d.timestamp > 86400000) return;
+      const list = Array.isArray(d.emojis) ? d.emojis : Object.values(d.emojis || {});
+      if (list.length) setTimeout(() => queueEmojiWall(list), 500);
+    });
     onChildAdded(ref(db, "events"), (snap) => {
       const d = snap.val();
       if (!d || typeof d.timestamp !== "number") return;
