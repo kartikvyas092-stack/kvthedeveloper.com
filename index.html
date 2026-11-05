@@ -226,7 +226,8 @@
   .message-row.received { align-self:flex-start; }
 
   .bubble-wrap { position:relative; display:flex; flex-direction:column; min-width:0; }
-  .message img.gif-message.photo-message { max-width: 240px; width: 100%; }
+  .message img.gif-message.photo-message { max-width: 240px; width: 100%; min-height: 80px; background: rgba(255,255,255,0.05); }
+  .full-link { display:inline-block; margin-top:0.35em; font-size:0.72em; color:var(--mint); text-decoration:none; opacity:0.85; }
   .msg-actions { display:flex; gap:4px; align-self:center; flex-shrink:0; }
   #reply-bar {
     display:none; align-items:center; gap:0.6em; padding:0.45em 0.9em;
@@ -293,6 +294,27 @@
     15% { opacity:1; }
     100% { transform:translate(var(--dx), var(--dy)) scale(1.1) rotate(var(--rot)); opacity:0; }
   }
+  /* full emoji sheet for reactions */
+  #emoji-backdrop { position:fixed; inset:0; z-index:3500; background:rgba(0,0,0,0.4); display:flex; align-items:flex-end; justify-content:center; }
+  #emoji-sheet {
+    width:100%; max-width:520px; max-height:55vh; display:flex; flex-direction:column;
+    background:var(--bg-mid); border:1px solid var(--panel-border); border-bottom:none;
+    border-radius:22px 22px 0 0; padding:0.7em 0.8em calc(0.8em + env(safe-area-inset-bottom, 0px));
+    animation: sheetUp .22s ease;
+  }
+  @keyframes sheetUp { from{transform:translateY(40px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+  .es-head { display:flex; align-items:center; gap:0.5em; margin-bottom:0.5em; }
+  .es-x { cursor:pointer; opacity:0.7; padding:0.3em 0.5em; }
+  .es-tabs { display:flex; gap:0.3em; margin-bottom:0.4em; }
+  .es-tabs span { font-size:1.25em; padding:0.2em 0.5em; border-radius:12px; cursor:pointer; opacity:0.55; user-select:none; }
+  .es-tabs span.on { opacity:1; background:rgba(255,255,255,0.1); }
+  .es-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(40px, 1fr)); gap:2px; overflow-y:auto; }
+  .es-item { font-size:1.55em; text-align:center; padding:0.15em; cursor:pointer; border-radius:10px; user-select:none; }
+  .es-item:hover { background:rgba(255,255,255,0.1); }
+  .reaction-picker span.pick-more {
+    font-size:1.1em; font-weight:700; width:26px; height:26px; border-radius:50%; align-self:center;
+    background:rgba(255,255,255,0.14); display:flex; align-items:center; justify-content:center;
+  }
   /* /emoji wall */
   .emoji-wall { position:fixed; inset:0; z-index:2900; pointer-events:none; overflow:hidden; }
   .emoji-rise { position:absolute; bottom:-4rem; margin-left:-0.5em; opacity:0; animation: emojiRise 3s ease-in both; }
@@ -337,6 +359,7 @@
     background:var(--bg-mid); border:1px solid var(--panel-border); border-radius:22px;
     box-shadow:0 6px 20px rgba(0,0,0,0.45); z-index:50; animation: popIn .18s ease;
   }
+  .reaction-picker.below { bottom:auto; top:calc(100% + 6px); }
   .sent .reaction-picker { right:0; }
   .received .reaction-picker { left:0; }
   .reaction-picker span { font-size:1.35em; cursor:pointer; transition: transform .15s; user-select:none; }
@@ -482,6 +505,12 @@
     messagingSenderId: "403392475876",
     appId: "1:403392475876:web:838695d5114c330a08f2f1"
   };
+
+  // --- Google Drive photo storage (see setup steps) ---
+  // Paste your Apps Script "Web app" URL and the same secret word you put in the script.
+  // Leave DRIVE_URL empty to keep sending smaller photos through the database instead.
+  const DRIVE_URL = "https://script.google.com/macros/s/AKfycbzibLhRlUeONslgtgVcot5DtIHw9mPLXfFwf4wkR8BFUJInQoOaPPF_JXVoNj3NrSyWfQ/exec";
+  const DRIVE_SECRET = "KproDrive";
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
@@ -664,13 +693,13 @@
   }
   document.addEventListener("click", closePickers);
 
-  function showToast(text) {
+  function showToast(text, ms = 1400) {
     document.querySelectorAll(".toast").forEach(t => t.remove());
     const t = document.createElement("div");
     t.className = "toast";
     t.textContent = text;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 1400);
+    setTimeout(() => t.remove(), ms);
   }
   async function copyText(text) {
     try {
@@ -751,12 +780,65 @@
   const imgBtn = document.getElementById("img-btn");
   const imgFile = document.getElementById("img-file");
   imgBtn.addEventListener("click", () => { if (myName) imgFile.click(); });
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1]);
+      r.onerror = () => reject(new Error("could not read file"));
+      r.readAsDataURL(file);
+    });
+  }
+  // sends the ORIGINAL file to the owner's Google Drive (through the Apps Script), returns the Drive file id
+  async function uploadToDrive(file) {
+    const data = await fileToBase64(file);
+    const safe = (file.name || "photo").replace(/[^\w.\- ]/g, "_");
+    const res = await fetch(DRIVE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ secret: DRIVE_SECRET, name: `${myName}-${Date.now()}-${safe}`, mime: file.type || "image/jpeg", data })
+    });
+    const out = await res.json();
+    if (!out.ok) throw new Error(out.error || "upload failed");
+    return out.id;
+  }
+  function driveImgUrls(id) {
+    return [
+      `https://drive.google.com/thumbnail?id=${id}&sz=w1200`,
+      `https://lh3.googleusercontent.com/d/${id}=w1200`,
+      `https://drive.google.com/thumbnail?id=${id}&sz=w1200&r=2`,
+      `https://lh3.googleusercontent.com/d/${id}=w1200?r=2`
+    ];
+  }
+  function loadDriveImage(im, id) {
+    const urls = driveImgUrls(id);
+    let i = 0;
+    im.src = urls[0];
+    im.addEventListener("error", () => {
+      i++;
+      if (i < urls.length) setTimeout(() => { im.src = urls[i]; }, 1800);
+    });
+  }
+
   imgFile.addEventListener("change", async () => {
     const file = imgFile.files[0];
     imgFile.value = "";
     if (!file || !myName) return;
-    showToast("Sending photo 📸");
     try {
+      if (DRIVE_URL) {
+        if (file.size > 30 * 1024 * 1024) { showToast("That photo is over 30 MB 🥺"); return; }
+        showToast("Uploading to Drive 📤", 30000);
+        try {
+          const driveId = await uploadToDrive(file);
+          await push(ref(db, "messages"), withReply({ type: "image", driveId, sender: myName, timestamp: Date.now() }));
+          showToast("Sent 📸");
+          return;
+        } catch (err) {
+          console.error(err);
+          showToast("Drive upload failed, sending a smaller copy 🥺", 2500);
+        }
+      } else {
+        showToast("Sending photo 📸");
+      }
       const url = await compressImage(file);
       await push(ref(db, "messages"), withReply({ type: "image", url, sender: myName, timestamp: Date.now() }));
     } catch (err) {
@@ -923,6 +1005,71 @@
     push(ref(db, "emojiFx"), { emojis: found, sender: myName, timestamp: serverTimestamp() });
   }
 
+  // --- (+) full emoji sheet for reactions ---
+  const EMOJI_SETS = {
+    "😊": "😀 😃 😄 😁 😆 😅 😂 🤣 🥲 ☺️ 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🥸 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫣 🤭 🫢 🫡 🤫 🫠 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷 🤒 🤕 🤑 🤠 😈 👿 👻 💀 🤡 💩",
+    "❤️": "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❤️‍🔥 ❤️‍🩹 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 💌 💋 🫶 🙏 👍 👎 👏 🙌 🤝 👌 ✌️ 🤞 🤟 🤘 🤙 👋 🤚 ✋ 🖐️ 💪 🫂 🤲 👀 💯 ✨ 🔥 💥 💫 ⭐ 🌟 🎉 🎊",
+    "🐻": "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🦆 🦉 🦋 🐝 🐞 🐢 🐍 🐙 🐬 🐳 🦈 🌸 🌹 🌻 🌷 🌈 ☀️ 🌙 ☁️ ❄️ 🌊 🍀 🌴",
+    "🍕": "🍎 🍓 🍒 🍑 🍉 🍌 🥭 🍍 🥝 🍅 🥑 🍔 🍟 🍕 🌭 🌮 🍿 🍩 🍪 🎂 🍰 🧁 🍫 🍬 🍭 🍦 🍨 ☕ 🧋 🍵 🥤 🍷 🍻 🥂",
+    "⚽": "⚽ 🏀 🏏 🎾 🏸 🎮 🎯 🎲 🎧 🎤 🎬 🎨 📷 📱 💻 🚗 ✈️ 🚀 🏠 🎁 🎈 📚 💡 🔔 🔑 💎 👑 🧸 🌍"
+  };
+  function closeEmojiSheet() {
+    const b = document.getElementById("emoji-backdrop");
+    if (b) b.remove();
+  }
+  function openEmojiSheet(key) {
+    closeEmojiSheet();
+    const back = document.createElement("div");
+    back.id = "emoji-backdrop";
+    back.addEventListener("click", (e) => { if (e.target === back) closeEmojiSheet(); });
+    const sheet = document.createElement("div");
+    sheet.id = "emoji-sheet";
+    const pick = (em) => { toggleReaction(key, em); closeEmojiSheet(); };
+
+    const head = document.createElement("div");
+    head.className = "es-head";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "es-input";
+    inp.placeholder = "type or paste any emoji…";
+    inp.addEventListener("input", () => {
+      const m = inp.value.match(EMOJI_RE);
+      if (m) pick(m[0]);
+    });
+    const x = document.createElement("span");
+    x.className = "es-x";
+    x.textContent = "✕";
+    x.addEventListener("click", closeEmojiSheet);
+    head.append(inp, x);
+
+    const tabs = document.createElement("div");
+    tabs.className = "es-tabs";
+    const grid = document.createElement("div");
+    grid.className = "es-grid";
+    function show(name) {
+      grid.innerHTML = "";
+      EMOJI_SETS[name].split(" ").forEach((em) => {
+        const it = document.createElement("span");
+        it.className = "es-item";
+        it.textContent = em;
+        it.addEventListener("click", () => pick(em));
+        grid.appendChild(it);
+      });
+      tabs.querySelectorAll("span").forEach((t) => t.classList.toggle("on", t.dataset.k === name));
+    }
+    Object.keys(EMOJI_SETS).forEach((k) => {
+      const t = document.createElement("span");
+      t.textContent = k;
+      t.dataset.k = k;
+      t.addEventListener("click", () => show(k));
+      tabs.appendChild(t);
+    });
+    sheet.append(head, tabs, grid);
+    back.appendChild(sheet);
+    document.body.appendChild(back);
+    show(Object.keys(EMOJI_SETS)[0]);
+  }
+
   let messagesStarted = false;
   function startMessages() {
     if (messagesStarted) return;
@@ -982,7 +1129,22 @@
       senderLabel.textContent = data.sender;
 
       let content;
-      if (data.type === "gif" || data.type === "image") {
+      if (data.type === "image" && data.driveId) {
+        content = document.createElement("div");
+        const im = document.createElement("img");
+        im.className = "gif-message photo-message";
+        im.referrerPolicy = "no-referrer";
+        loadDriveImage(im, data.driveId);
+        im.addEventListener("load", () => { chatBox.scrollTop = chatBox.scrollHeight; });
+        const link = document.createElement("a");
+        link.className = "full-link";
+        link.href = "https://drive.google.com/file/d/" + data.driveId + "/view";
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "⬇ full resolution";
+        link.addEventListener("click", (e) => e.stopPropagation());
+        content.append(im, link);
+      } else if (data.type === "gif" || data.type === "image") {
         content = document.createElement("img");
         content.src = data.url;
         content.className = data.type === "image" ? "gif-message photo-message" : "gif-message";
@@ -1057,7 +1219,19 @@
           });
           picker.appendChild(o);
         });
+        const more = document.createElement("span");
+        more.className = "pick-more";
+        more.textContent = "+";
+        more.title = "More emojis";
+        more.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          closePickers();
+          openEmojiSheet(key);
+        });
+        picker.appendChild(more);
         wrap.appendChild(picker);
+        // not enough room above this message (e.g. first one in the chat)? open the picker below it
+        if (wrap.getBoundingClientRect().top - chatBox.getBoundingClientRect().top < 64) picker.classList.add("below");
       });
 
       row.appendChild(avatar);
