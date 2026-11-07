@@ -294,6 +294,25 @@
     15% { opacity:1; }
     100% { transform:translate(var(--dx), var(--dy)) scale(1.1) rotate(var(--rot)); opacity:0; }
   }
+  /* single emoji = big */
+  .message.emoji-only { background:transparent !important; border-color:transparent; backdrop-filter:none; }
+  .big-emoji { font-size:3.2rem; line-height:1.1; text-align:center; }
+
+  /* watch together */
+  .watch-dock { display:none; flex-direction:column; flex-shrink:0; background:#0b070f; border-bottom:1px solid var(--panel-border); }
+  .wd-bar { display:flex; align-items:center; gap:0.4em; padding:0.25em 0.6em; font-size:0.8em; color:var(--text-dim); }
+  .wd-title { flex:1; }
+  .wd-btn { cursor:pointer; padding:0.1em 0.5em; border-radius:10px; background:rgba(255,255,255,0.1); user-select:none; }
+  .wd-video { align-self:center; width:auto; max-width:100%; height:min(40vh, 56.25vw); aspect-ratio:16/9; background:#000; }
+  .wd-video iframe, .wd-video .mock-yt { width:100%; height:100%; display:block; }
+  .watch-dock.mini {
+    position:fixed; top:74px; right:8px; width:176px; z-index:2500;
+    border:1px solid var(--panel-border); border-radius:14px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.55);
+  }
+  .watch-dock.mini .wd-title { display:none; }
+  .watch-dock.mini .wd-bar { justify-content:flex-end; padding:0.2em 0.3em; }
+  .watch-dock.mini .wd-video { height:99px; width:176px; }
+
   /* full emoji sheet for reactions */
   #emoji-backdrop { position:fixed; inset:0; z-index:3500; background:rgba(0,0,0,0.4); display:flex; align-items:flex-end; justify-content:center; }
   #emoji-sheet {
@@ -475,6 +494,15 @@
 </div>
 
 <div id="chat">
+  <div id="watch-dock" class="watch-dock">
+    <div class="wd-bar">
+      <span class="wd-title">📺 watching together</span>
+      <span class="wd-btn" id="wd-play" title="Play / pause for both">⏯</span>
+      <span class="wd-btn" id="wd-min" title="Minimise / expand">▁</span>
+      <span class="wd-btn" id="wd-close" title="End for both">✕</span>
+    </div>
+    <div id="yt-mount" class="wd-video"></div>
+  </div>
   <div id="chat-box"></div>
   <div id="typing-pop" class="typing-pop"></div>
   <div id="reply-bar"></div>
@@ -509,8 +537,8 @@
   // --- Google Drive photo storage (see setup steps) ---
   // Paste your Apps Script "Web app" URL and the same secret word you put in the script.
   // Leave DRIVE_URL empty to keep sending smaller photos through the database instead.
-  const DRIVE_URL = "https://script.google.com/macros/s/AKfycbzibLhRlUeONslgtgVcot5DtIHw9mPLXfFwf4wkR8BFUJInQoOaPPF_JXVoNj3NrSyWfQ/exec";
-  const DRIVE_SECRET = "KproDrive";
+  const DRIVE_URL = "";
+  const DRIVE_SECRET = "";
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
@@ -631,6 +659,12 @@
       input.value = "";
       setTyping(false);
       sendEmojiWall(text.replace(/^\/emoji\s*/i, ""));
+      return;
+    }
+    if (/^\/watch\b/i.test(text)) {
+      input.value = "";
+      setTyping(false);
+      startWatch(text.replace(/^\/watch\s*/i, ""));
       return;
     }
     if (text.toLowerCase() === "/kiss") {
@@ -1070,6 +1104,150 @@
     show(Object.keys(EMOJI_SETS)[0]);
   }
 
+  // --- a single emoji is shown big ---
+  const SINGLE_EMOJI_RE = new RegExp("^(?:" + EMOJI_RE.source + ")$", "u");
+
+  // --- /watch <youtube link>: watch together, play / pause / seek stay in sync ---
+  const watchDock = document.getElementById("watch-dock");
+  const wdMin = document.getElementById("wd-min");
+  let player = null, playerReady = false, currentVideoId = null;
+  let watchState = null, lastKnown = null, applyUntil = 0;
+  let echoState = null, echoUntil = 0;   // the player state we just caused ourselves (so we don't re-broadcast it)
+  const expectEcho = (state) => { echoState = state; echoUntil = Date.now() + 2000; };
+  let ytLoading = false;
+  const ytWaiters = [];
+  const isApplying = () => Date.now() < applyUntil;
+
+  function parseYouTubeId(t) {
+    const m = t.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^\s]*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/);
+    return m ? m[1] : null;
+  }
+  function loadYT(cb) {
+    if (window.YT && window.YT.Player) { cb(); return; }
+    ytWaiters.push(cb);
+    if (ytLoading) return;
+    ytLoading = true;
+    window.onYouTubeIframeAPIReady = () => { ytWaiters.splice(0).forEach((f) => f()); };
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    tag.onerror = () => { ytLoading = false; showToast("Couldn't load YouTube 🥺", 3000); };
+    document.head.appendChild(tag);
+  }
+  function targetOf(st) {
+    const ts = typeof st.ts === "number" ? st.ts : Date.now() + serverOffset;
+    return st.time + (st.playing ? Math.max(0, (Date.now() + serverOffset - ts) / 1000) : 0);
+  }
+  function showDock() {
+    watchDock.style.display = "flex";
+    watchDock.classList.remove("mini");
+    wdMin.textContent = "▁";
+  }
+  function endWatchLocal() {
+    if (player) { try { player.destroy(); } catch (e) {} }
+    player = null; playerReady = false; currentVideoId = null; lastKnown = null;
+    document.getElementById("yt-mount").innerHTML = "";
+    watchDock.style.display = "none";
+    watchDock.classList.remove("mini");
+  }
+  function applyWatchState(st) {
+    if (!player || !playerReady || !st) return;
+    applyUntil = Date.now() + 1200;
+    try {
+      const target = targetOf(st);
+      if (Math.abs(player.getCurrentTime() - target) > 1.5) player.seekTo(target, true);
+      const ps = player.getPlayerState();
+      if (st.playing && ps !== 1 && ps !== 3) { expectEcho(1); player.playVideo(); }
+      if (!st.playing && ps !== 2) { expectEcho(2); player.pauseVideo(); }
+      lastKnown = { time: target, at: Date.now(), playing: st.playing };
+    } catch (e) { console.error(e); }
+  }
+  function pushWatchState(playing, time) {
+    if (!currentVideoId) return;
+    lastKnown = { time, at: Date.now(), playing };
+    set(ref(db, "watch"), {
+      videoId: currentVideoId, playing, time, ts: serverTimestamp(), by: myName,
+      session: (watchState && watchState.session) || Date.now()
+    });
+  }
+  function onPlayerStateChange(ev) {
+    if (!player) return;
+    if (ev.data === echoState && Date.now() < echoUntil) { echoState = null; return; }
+    const cur = player.getCurrentTime();
+    if (ev.data === 1) pushWatchState(true, cur);
+    else if (ev.data === 2) pushWatchState(false, cur);
+    else if (ev.data === 0) pushWatchState(false, cur);
+  }
+  // catches scrubbing the timeline (YouTube has no "seek" event)
+  function syncPoll() {
+    if (!player || !playerReady || isApplying() || !lastKnown) return;
+    try {
+      const st = player.getPlayerState();
+      if (st === 3) return;
+      const cur = player.getCurrentTime();
+      const expected = lastKnown.playing ? lastKnown.time + (Date.now() - lastKnown.at) / 1000 : lastKnown.time;
+      if (Math.abs(cur - expected) > 2.5) pushWatchState(st === 1, cur);
+    } catch (e) {}
+  }
+  function ensurePlayer(videoId, startAt) {
+    loadYT(() => {
+      if (player && playerReady) {
+        if (currentVideoId !== videoId) {
+          currentVideoId = videoId;
+          applyUntil = Date.now() + 1500;
+          expectEcho(1);
+          player.loadVideoById({ videoId, startSeconds: Math.max(0, startAt) });
+          setTimeout(() => applyWatchState(watchState), 900);
+        } else {
+          applyWatchState(watchState);
+        }
+        return;
+      }
+      if (player) return;
+      currentVideoId = videoId;
+      document.getElementById("yt-mount").innerHTML = '<div id="yt-player"></div>';
+      const startPlaying = !(watchState && watchState.playing === false);
+      expectEcho(startPlaying ? 1 : 2);
+      player = new YT.Player("yt-player", {
+        videoId,
+        playerVars: { playsinline: 1, rel: 0, autoplay: startPlaying ? 1 : 0 },
+        events: {
+          onReady: () => { playerReady = true; applyWatchState(watchState); },
+          onStateChange: onPlayerStateChange,
+          onError: () => showToast("YouTube won't play that one here 🥺", 3000)
+        }
+      });
+    });
+  }
+  function startPlayerFor(st) {
+    showDock();
+    ensurePlayer(st.videoId, targetOf(st));
+  }
+  function startWatch(arg) {
+    const text = arg.trim();
+    if (!text) {
+      if (watchState && player) showDock();
+      else showToast("Try /watch + a YouTube link 📺", 2500);
+      return;
+    }
+    const id = parseYouTubeId(text);
+    if (!id) { showToast("That doesn't look like a YouTube link 🥺", 2500); return; }
+    const st = { videoId: id, playing: true, time: 0, ts: serverTimestamp(), by: myName, session: Date.now() };
+    watchState = Object.assign({}, st, { ts: Date.now() + serverOffset });
+    startPlayerFor(watchState);
+    set(ref(db, "watch"), st);
+  }
+  document.getElementById("wd-play").addEventListener("click", () => {
+    if (!player || !playerReady) return;
+    if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
+  });
+  wdMin.addEventListener("click", () => {
+    const mini = watchDock.classList.toggle("mini");
+    wdMin.textContent = mini ? "⤢" : "▁";
+  });
+  document.getElementById("wd-close").addEventListener("click", () => {
+    if (confirm("End watching together for both of you?")) remove(ref(db, "watch"));
+  });
+
   let messagesStarted = false;
   function startMessages() {
     if (messagesStarted) return;
@@ -1090,6 +1268,31 @@
       const list = Array.isArray(d.emojis) ? d.emojis : Object.values(d.emojis || {});
       if (list.length) setTimeout(() => queueEmojiWall(list), 500);
     });
+
+    // watch together: everyone follows the shared play / pause / position
+    let watchSeen = false;
+    onValue(ref(db, "watch"), (snap) => {
+      const st = snap.val();
+      const first = !watchSeen;
+      watchSeen = true;
+      if (!st) {
+        if (watchState) { endWatchLocal(); if (!first) showToast("Watching together ended 📺", 2000); }
+        watchState = null;
+        return;
+      }
+      const prev = watchState;
+      const isNew = !prev || prev.session !== st.session || prev.videoId !== st.videoId;
+      const age = typeof st.ts === "number" ? Date.now() + serverOffset - st.ts : 0;
+      if (isNew && first && age > 2 * 3600 * 1000) return;   // old leftover session
+      watchState = st;
+      if (isNew) {
+        if (st.by !== myName) showToast((NAMES[st.by] || st.by) + " is watching a video, joining 📺", 2500);
+        startPlayerFor(st);
+      } else if (st.by !== myName) {
+        applyWatchState(st);
+      }
+    });
+    setInterval(syncPoll, 1000);
     onChildAdded(ref(db, "events"), (snap) => {
       const d = snap.val();
       if (!d || typeof d.timestamp !== "number") return;
@@ -1152,6 +1355,7 @@
       } else {
         content = document.createElement("div");
         content.textContent = data.text;
+        if (SINGLE_EMOJI_RE.test((data.text || "").trim())) { content.className = "big-emoji"; msg.classList.add("emoji-only"); }
       }
 
       const timeLabel = document.createElement("div");
