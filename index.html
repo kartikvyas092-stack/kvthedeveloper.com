@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>K & K chat 💞</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -294,6 +295,39 @@
     15% { opacity:1; }
     100% { transform:translate(var(--dx), var(--dy)) scale(1.1) rotate(var(--rot)); opacity:0; }
   }
+  /* one-time celebration pop-ups */
+  .cel-back { position:fixed; inset:0; z-index:3550; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; padding:1em; }
+  .cel-form { width:100%; max-width:420px; max-height:90vh; overflow-y:auto; background:var(--bg-mid); border:1px solid var(--panel-border); border-radius:22px; padding:1.1em 1.2em; display:flex; flex-direction:column; gap:0.6em; }
+  .cel-form-title { font-family:'Fredoka',sans-serif; font-size:1.25em; color:var(--pink); }
+  .cel-form-sub { font-size:0.82em; color:var(--text-dim); margin-top:-0.4em; }
+  .cel-form input, .cel-form textarea, .cel-form select { width:100%; padding:0.7em 0.9em; border-radius:14px; border:1px solid var(--panel-border); background:#241a2b; color:var(--text); font-family:'Quicksand',sans-serif; font-size:0.95em; outline:none; }
+  .cel-form textarea { resize:vertical; }
+  .cel-chips { display:flex; gap:0.4em; flex-wrap:wrap; }
+  .cel-chip { padding:0.35em 0.75em; border-radius:16px; border:1px solid var(--panel-border); cursor:pointer; font-size:0.85em; user-select:none; }
+  .cel-chip.on { border-color:var(--pink); background:rgba(255,179,198,0.2); }
+  .cel-actions { display:flex; gap:0.5em; flex-wrap:wrap; }
+  .cel-act { flex:1; text-align:center; padding:0.65em 0.5em; border-radius:14px; background:rgba(255,255,255,0.1); cursor:pointer; user-select:none; font-family:'Fredoka',sans-serif; }
+  .cel-act.main { background:linear-gradient(135deg,var(--pink),var(--peach)); color:#241627; font-weight:600; }
+  .cel-pend { font-size:0.82em; color:var(--text-dim); display:flex; flex-direction:column; gap:0.3em; }
+  .cel-pend-item { display:flex; align-items:center; gap:0.5em; background:rgba(255,255,255,0.05); border-radius:10px; padding:0.3em 0.6em; }
+  .cel-pend-item span:first-child { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cel-pend-x { cursor:pointer; opacity:0.7; }
+  .cel-overlay { position:fixed; inset:0; z-index:3600; display:flex; align-items:center; justify-content:center; overflow:hidden; background:radial-gradient(circle at 50% 40%, rgba(255,140,180,0.3), rgba(10,5,15,0.86)); animation: celIn .4s ease both; }
+  @keyframes celIn { from{opacity:0;} to{opacity:1;} }
+  .cel-layer { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  .cel-p { position:absolute; opacity:0; animation-timing-function:linear; animation-iteration-count:infinite; }
+  .cel-p.fall { top:-6vh; animation-name: celFall; }
+  .cel-p.rise { bottom:-8vh; animation-name: celRise; }
+  @keyframes celFall { 0%{ transform:translate(0,0) rotate(0deg); opacity:1; } 100%{ transform:translate(var(--sway),112vh) rotate(var(--rot)); opacity:1; } }
+  @keyframes celRise { 0%{ transform:translate(0,0) rotate(0deg); opacity:1; } 100%{ transform:translate(var(--sway),-115vh) rotate(calc(var(--rot) / 6)); opacity:0.9; } }
+  .cel-card { position:relative; z-index:2; width:min(92vw, 420px); background:var(--bg-mid); border:1px solid var(--panel-border); border-radius:26px; padding:1.6em 1.4em 1.3em; text-align:center; box-shadow:0 18px 60px rgba(0,0,0,0.6), 0 0 40px rgba(255,158,184,0.25); animation: celPop .55s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes celPop { from{ transform:scale(0.4) translateY(40px); opacity:0; } to{ transform:scale(1) translateY(0); opacity:1; } }
+  .cel-emoji { font-size:3.6rem; line-height:1; animation: pulseHeart 1.6s ease-in-out infinite; }
+  .cel-title { font-family:'Fredoka',sans-serif; font-weight:600; font-size:1.6rem; color:var(--pink); margin-top:0.3em; word-break:break-word; }
+  .cel-msg { margin-top:0.6em; white-space:pre-wrap; line-height:1.45; word-break:break-word; }
+  .cel-from { margin-top:0.8em; font-size:0.82em; color:var(--text-dim); }
+  .cel-close { display:inline-block; margin-top:1.1em; padding:0.7em 1.8em; border-radius:26px; background:linear-gradient(135deg,var(--pink),var(--peach)); color:#241627; font-family:'Fredoka',sans-serif; font-weight:600; cursor:pointer; user-select:none; }
+
   /* single emoji = big */
   .message.emoji-only { background:transparent !important; border-color:transparent; backdrop-filter:none; }
   .big-emoji { font-size:3.2rem; line-height:1.1; text-align:center; }
@@ -440,12 +474,14 @@
   .timestamp { font-size:0.68em; opacity:0.6; align-self:flex-end; margin-top:0.35em; }
 
   footer {
-    display: flex; align-items:center; padding: 0.6em 0.8em;
+    display: flex; align-items:flex-end; padding: 0.6em 0.8em;
     background: var(--panel); backdrop-filter: blur(10px);
     border-top: 1px solid var(--panel-border);
     padding-bottom: calc(0.6em + env(safe-area-inset-bottom, 0px));
   }
-  input[type="text"] {
+  footer textarea#message-input { resize:none; height:46px; max-height:130px; line-height:1.2; padding:0.78em 1.1em; overflow-y:auto; }
+  .msg-text { white-space: pre-wrap; }
+  input[type="text"], textarea#message-input {
     flex: 1; padding: 0.85em 1.1em; border: 1px solid var(--panel-border);
     border-radius: 22px; outline: none; font-size: 1em;
     background: var(--bg-mid); color: var(--text); font-family:'Quicksand',sans-serif;
@@ -507,7 +543,7 @@
   <div id="typing-pop" class="typing-pop"></div>
   <div id="reply-bar"></div>
   <footer>
-    <input type="text" id="message-input" placeholder="Type a message...">
+    <textarea id="message-input" rows="1" placeholder="Type a message… (Shift+Enter for a new line)"></textarea>
     <button id="sendBtn">➤</button>
     <div id="gif-panel" style="display:none;">
       <input type="text" id="gif-search" placeholder="Search GIFs...">
@@ -537,8 +573,8 @@
   // --- Google Drive photo storage (see setup steps) ---
   // Paste your Apps Script "Web app" URL and the same secret word you put in the script.
   // Leave DRIVE_URL empty to keep sending smaller photos through the database instead.
-  const DRIVE_URL = "https://script.google.com/macros/s/AKfycbzibLhRlUeONslgtgVcot5DtIHw9mPLXfFwf4wkR8BFUJInQoOaPPF_JXVoNj3NrSyWfQ/exec";
-  const DRIVE_SECRET = "KproDrive";
+  const DRIVE_URL = "";
+  const DRIVE_SECRET = "";
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
@@ -650,36 +686,54 @@
     const text = input.value.trim();
     if (!text || !myName) return;
     if (text.toLowerCase() === "/clear") {
-      input.value = "";
+      input.value = ""; autoGrow();
       setTyping(false);
       clearChat();
       return;
     }
     if (/^\/emoji\b/i.test(text)) {
-      input.value = "";
+      input.value = ""; autoGrow();
       setTyping(false);
       sendEmojiWall(text.replace(/^\/emoji\s*/i, ""));
       return;
     }
     if (/^\/watch\b/i.test(text)) {
-      input.value = "";
+      input.value = ""; autoGrow();
       setTyping(false);
       startWatch(text.replace(/^\/watch\s*/i, ""));
       return;
     }
+    if (/^\/(celebrate|surprise)\b/i.test(text)) {
+      input.value = ""; autoGrow();
+      setTyping(false);
+      openCelebrationComposer();
+      return;
+    }
+    if (text.toLowerCase() === "/drivetest") {
+      input.value = ""; autoGrow();
+      setTyping(false);
+      driveTest();
+      return;
+    }
     if (text.toLowerCase() === "/kiss") {
-      input.value = "";
+      input.value = ""; autoGrow();
       setTyping(false);
       sendLove("kiss");
       return;
     }
     push(ref(db, "messages"), withReply({ type: "text", text, sender: myName, timestamp: Date.now() }));
-    input.value = "";
+    input.value = ""; autoGrow();
     setTyping(false);
   }
   sendBtn.addEventListener("click", sendMessage);
+  // Enter sends, Shift+Enter makes a new line; the box grows with the text
+  function autoGrow() {
+    input.style.height = "auto";
+    input.style.height = Math.min(Math.max(input.scrollHeight + 2, 46), 130) + "px";
+  }
+  input.addEventListener("input", autoGrow);
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); }
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendMessage(); }
   });
 
   function formatTime(ms) {
@@ -843,14 +897,75 @@
       `https://lh3.googleusercontent.com/d/${id}=w1200?r=2`
     ];
   }
-  function loadDriveImage(im, id) {
+  // shows the Drive thumbnail as soon as it can be loaded (a tiny preview in the message is shown meanwhile)
+  function loadDriveImage(im, id, hasPreview, onFail) {
     const urls = driveImgUrls(id);
     let i = 0;
-    im.src = urls[0];
-    im.addEventListener("error", () => {
-      i++;
-      if (i < urls.length) setTimeout(() => { im.src = urls[i]; }, 1800);
+    const tryNext = () => {
+      if (i >= urls.length) { if (!hasPreview && onFail) onFail(); return; }
+      const probe = new Image();
+      probe.referrerPolicy = "no-referrer";
+      probe.onload = () => { im.src = urls[i]; };
+      probe.onerror = () => { i++; setTimeout(tryNext, 1800); };
+      probe.src = urls[i];
+    };
+    tryNext();
+  }
+  function probeDriveImage(id) {
+    const urls = driveImgUrls(id);
+    return new Promise((resolve) => {
+      let i = 0;
+      const next = () => {
+        if (i >= urls.length) return resolve(false);
+        const im = new Image();
+        im.referrerPolicy = "no-referrer";
+        im.onload = () => resolve(true);
+        im.onerror = () => { i++; setTimeout(next, 1800); };
+        im.src = urls[i];
+      };
+      next();
     });
+  }
+  function driveErrorText(err) {
+    const m = String((err && err.message) || err);
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "can't reach the Drive script";
+    if (/JSON|Unexpected token|DOCTYPE/i.test(m)) return "the script asked for a Google sign-in";
+    if (/forbidden/i.test(m)) return "secret word doesn't match";
+    return m.slice(0, 60);
+  }
+
+  // /drivetest: checks every step of the Drive photo flow from THIS browser
+  const APP_VERSION = "v3 · drive + preview";
+  const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP837OFgYGBiYGBgYGBAQAbaQJDXjI5ugAAAABJRU5ErkJggg==";
+  async function driveTest() {
+    const lines = ["K & K chat " + APP_VERSION, ""];
+    if (!DRIVE_URL) {
+      lines.push("Drive script address: NOT SET in this copy of the page ❌");
+      alert(lines.join("\n"));
+      return;
+    }
+    lines.push("Drive script address: set ✅");
+    showToast("Testing Drive… ⏳", 40000);
+    let id = null;
+    try {
+      const res = await fetch(DRIVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ secret: DRIVE_SECRET, name: "kk-test-" + Date.now() + ".png", mime: "image/png", data: TINY_PNG })
+      });
+      const out = await res.json();
+      lines.push("Reaching the script: ✅");
+      if (out.ok) { id = out.id; lines.push("Saving a test file in Drive: ✅"); }
+      else lines.push("Saving a test file in Drive: ❌ " + (out.error === "forbidden" ? "the secret word differs between the page and the script" : out.error));
+    } catch (err) {
+      lines.push("Reaching the script: ❌ " + driveErrorText(err));
+    }
+    if (id) {
+      const ok = await probeDriveImage(id);
+      lines.push("Opening that file from this browser: " + (ok ? "✅" : "❌ not viewable here (Drive sharing is restricted, or Google images are blocked in this browser)"));
+    }
+    document.querySelectorAll(".toast").forEach((t) => t.remove());
+    alert(lines.join("\n"));
   }
 
   imgFile.addEventListener("change", async () => {
@@ -862,13 +977,16 @@
         if (file.size > 30 * 1024 * 1024) { showToast("That photo is over 30 MB 🥺"); return; }
         showToast("Uploading to Drive 📤", 30000);
         try {
-          const driveId = await uploadToDrive(file);
-          await push(ref(db, "messages"), withReply({ type: "image", driveId, sender: myName, timestamp: Date.now() }));
+          const [driveId, preview] = await Promise.all([
+            uploadToDrive(file),
+            compressImage(file, 320, 0.6, 60000).catch(() => "")
+          ]);
+          await push(ref(db, "messages"), withReply({ type: "image", driveId, preview, sender: myName, timestamp: Date.now() }));
           showToast("Sent 📸");
           return;
         } catch (err) {
           console.error(err);
-          showToast("Drive upload failed, sending a smaller copy 🥺", 2500);
+          showToast("Drive upload failed (" + driveErrorText(err) + "), sent a smaller copy instead 🥺", 6000);
         }
       } else {
         showToast("Sending photo 📸");
@@ -880,13 +998,13 @@
       showToast("Couldn't send that photo 🥺");
     }
   });
-  function compressImage(file) {
+  function compressImage(file, startMax = 900, startQ = 0.72, limit = 400000) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       const objUrl = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(objUrl);
-        let max = 900, quality = 0.72, out;
+        let max = startMax, quality = startQ, out;
         for (let i = 0; i < 4; i++) {
           const scale = Math.min(1, max / Math.max(img.width, img.height));
           const c = document.createElement("canvas");
@@ -897,7 +1015,7 @@
           ctx.fillRect(0, 0, c.width, c.height);
           ctx.drawImage(img, 0, 0, c.width, c.height);
           out = c.toDataURL("image/jpeg", quality);
-          if (out.length < 400000) break;
+          if (out.length < limit) break;
           max *= 0.75;
           quality -= 0.1;
         }
@@ -1207,16 +1325,28 @@
       document.getElementById("yt-mount").innerHTML = '<div id="yt-player"></div>';
       const startPlaying = !(watchState && watchState.playing === false);
       expectEcho(startPlaying ? 1 : 2);
+      const playerVars = { playsinline: 1, rel: 0, autoplay: startPlaying ? 1 : 0 };
+      if (/^https?:$/.test(location.protocol)) playerVars.origin = location.origin;
+      else showToast("Open the site from its web link, not the saved file, or YouTube will refuse to play 🥺", 6000);
       player = new YT.Player("yt-player", {
         videoId,
-        playerVars: { playsinline: 1, rel: 0, autoplay: startPlaying ? 1 : 0 },
+        playerVars,
         events: {
           onReady: () => { playerReady = true; applyWatchState(watchState); },
           onStateChange: onPlayerStateChange,
-          onError: () => showToast("YouTube won't play that one here 🥺", 3000)
+          onError: (ev) => showToast(youtubeErrorText(ev && ev.data), 6000)
         }
       });
     });
+  }
+  function youtubeErrorText(code) {
+    if (code === 101 || code === 150) return "The video's owner doesn't allow it to be played on other sites, try another video 🥺";
+    if (code === 153) return location.protocol === "file:"
+      ? "YouTube needs a real web address: open the site from its web link, not the saved file 🥺"
+      : "YouTube refused this embed (error 153). Try a different video, or open the site from its normal web link 🥺";
+    if (code === 100) return "That video was not found, or it is private 🥺";
+    if (code === 2) return "That YouTube link isn't valid 🥺";
+    return "YouTube won't play that one here 🥺";
   }
   function startPlayerFor(st) {
     showDock();
@@ -1247,6 +1377,158 @@
   document.getElementById("wd-close").addEventListener("click", () => {
     if (confirm("End watching together for both of you?")) remove(ref(db, "watch"));
   });
+
+  // --- /celebrate: custom one-time pop-ups that show once when the other person logs in ---
+  const CEL_STYLES = {
+    confetti: { label: "🎉 Confetti", mode: "fall", chars: null, emoji: "🎉" },
+    hearts:   { label: "💖 Hearts", mode: "rise", chars: ["❤️", "💖", "💕", "💗"], emoji: "💖" },
+    balloons: { label: "🎈 Balloons", mode: "rise", chars: ["🎈"], emoji: "🎈" },
+    sparkles: { label: "✨ Sparkles", mode: "fall", chars: ["✨", "⭐", "🌟", "💫"], emoji: "✨" }
+  };
+  const CONFETTI_COLORS = ["#ff9eb8", "#ffd3a0", "#b9f3df", "#d6b8ff", "#8ecbff", "#ff6b81", "#ffe66d"];
+  const celQueue = [];
+  let celShowing = false;
+
+  function spawnCelebrationParticles(layer, style) {
+    const st = CEL_STYLES[style] || CEL_STYLES.confetti;
+    for (let i = 0; i < 60; i++) {
+      const p = document.createElement("span");
+      p.className = "cel-p " + (st.mode === "fall" ? "fall" : "rise");
+      p.style.left = (Math.random() * 100) + "%";
+      p.style.animationDuration = (3.5 + Math.random() * 3) + "s";
+      p.style.animationDelay = (-Math.random() * 6) + "s";
+      p.style.setProperty("--sway", (Math.random() * 80 - 40) + "px");
+      p.style.setProperty("--rot", (Math.random() * 720 - 360) + "deg");
+      if (st.chars) {
+        p.textContent = st.chars[Math.floor(Math.random() * st.chars.length)];
+        p.style.fontSize = (1.2 + Math.random() * 1.6) + "rem";
+      } else {
+        p.style.width = (7 + Math.random() * 6) + "px";
+        p.style.height = (12 + Math.random() * 8) + "px";
+        p.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+        p.style.borderRadius = "2px";
+      }
+      layer.appendChild(p);
+    }
+  }
+  function queueCelebration(data, preview) {
+    celQueue.push({ data, preview });
+    if (!celShowing) nextCelebration();
+  }
+  function nextCelebration() {
+    const item = celQueue.shift();
+    if (!item) { celShowing = false; return; }
+    celShowing = true;
+    const { data, preview } = item;
+    const st = CEL_STYLES[data.style] || CEL_STYLES.confetti;
+    const ov = document.createElement("div");
+    ov.className = "cel-overlay";
+    const layer = document.createElement("div");
+    layer.className = "cel-layer";
+    spawnCelebrationParticles(layer, data.style);
+    const card = document.createElement("div");
+    card.className = "cel-card";
+    const add = (cls, text) => {
+      if (!text) return;
+      const d = document.createElement("div");
+      d.className = cls;
+      d.textContent = text;
+      card.appendChild(d);
+    };
+    add("cel-emoji", st.emoji);
+    add("cel-title", data.title);
+    add("cel-msg", data.message);
+    add("cel-from", preview ? "(preview, nothing was saved)" : (data.from ? "from " + (NAMES[data.from] || data.from) + " 💌" : ""));
+    const btn = document.createElement("div");
+    btn.className = "cel-close";
+    btn.textContent = preview ? "close" : "yay! 🥳";
+    btn.addEventListener("click", () => { ov.remove(); nextCelebration(); });
+    card.appendChild(btn);
+    ov.append(layer, card);
+    document.body.appendChild(ov);
+  }
+  // runs once at login: every surprise addressed to me is deleted first (so it can never show again), then shown
+  function checkCelebrations() {
+    onValue(ref(db, "celebrations"), (snap) => {
+      const all = snap.val() || {};
+      Object.entries(all)
+        .filter(([, c]) => c && c.to === myName)
+        .sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0))
+        .forEach(([key, c]) => {
+          remove(ref(db, "celebrations/" + key))
+            .then(() => setTimeout(() => queueCelebration(c, false), 900))
+            .catch(() => showToast("Couldn't open a surprise (database permission)", 4000));
+        });
+    }, { onlyOnce: true });
+  }
+  function openCelebrationComposer() {
+    if (document.getElementById("cel-composer")) return;
+    const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+    const back = mk("div", "cel-back");
+    back.id = "cel-composer";
+    const form = mk("div", "cel-form");
+    const toSel = document.createElement("select");
+    [["Kahu", "Kahaani"], ["Kartu", "Kartik"]].forEach(([v, n]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = "For " + n; toSel.appendChild(o);
+    });
+    toSel.value = myName === "Kartu" ? "Kahu" : "Kartu";
+    const titleIn = document.createElement("input");
+    titleIn.type = "text"; titleIn.maxLength = 60; titleIn.placeholder = "Title, e.g. Happy Birthday! 🎂";
+    const msgIn = document.createElement("textarea");
+    msgIn.rows = 4; msgIn.maxLength = 400; msgIn.placeholder = "Your message…";
+    let chosen = "confetti";
+    const chips = mk("div", "cel-chips");
+    Object.entries(CEL_STYLES).forEach(([key, v]) => {
+      const c = mk("div", "cel-chip" + (key === chosen ? " on" : ""), v.label);
+      c.addEventListener("click", () => {
+        chosen = key;
+        chips.querySelectorAll(".cel-chip").forEach((x) => x.classList.remove("on"));
+        c.classList.add("on");
+      });
+      chips.appendChild(c);
+    });
+    const actions = mk("div", "cel-actions");
+    const prevBtn = mk("div", "cel-act", "👀 Preview");
+    const saveBtn = mk("div", "cel-act main", "🎁 Save");
+    const closeBtn = mk("div", "cel-act", "Close");
+    actions.append(prevBtn, saveBtn, closeBtn);
+    const pend = mk("div", "cel-pend");
+    let off = null;
+    const close = () => { if (typeof off === "function") off(); back.remove(); };
+    prevBtn.addEventListener("click", () => {
+      if (!titleIn.value.trim() && !msgIn.value.trim()) { showToast("Add a title or a message first 🥺"); return; }
+      queueCelebration({ title: titleIn.value.trim(), message: msgIn.value.trim(), style: chosen, from: myName }, true);
+    });
+    saveBtn.addEventListener("click", () => {
+      const title = titleIn.value.trim(), message = msgIn.value.trim();
+      if (!title && !message) { showToast("Add a title or a message first 🥺"); return; }
+      push(ref(db, "celebrations"), { to: toSel.value, from: myName, title, message, style: chosen, createdAt: serverTimestamp() });
+      showToast("Saved 🎁 It pops up once when " + (NAMES[toSel.value] || toSel.value) + " logs in", 3500);
+      titleIn.value = ""; msgIn.value = "";
+    });
+    closeBtn.addEventListener("click", close);
+    form.append(mk("div", "cel-form-title", "🎁 one-time surprise"),
+      mk("div", "cel-form-sub", "Pops up once when they log in, then it's gone for good."),
+      toSel, titleIn, msgIn, chips, actions, pend);
+    back.appendChild(form);
+    document.body.appendChild(back);
+    titleIn.focus();
+    off = onValue(ref(db, "celebrations"), (snap) => {
+      const mine = Object.entries(snap.val() || {}).filter(([, c]) => c && c.from === myName);
+      pend.innerHTML = "";
+      if (!mine.length) return;
+      pend.appendChild(mk("div", "", "Waiting to be shown:"));
+      mine.forEach(([key, c]) => {
+        const row = mk("div", "cel-pend-item");
+        row.appendChild(mk("span", "", "→ " + (NAMES[c.to] || c.to) + " · " + (c.title || c.message || "")));
+        const x = mk("span", "cel-pend-x", "✕");
+        x.title = "Delete this surprise";
+        x.addEventListener("click", () => remove(ref(db, "celebrations/" + key)));
+        row.appendChild(x);
+        pend.appendChild(row);
+      });
+    });
+  }
 
   let messagesStarted = false;
   function startMessages() {
@@ -1293,6 +1575,7 @@
       }
     });
     setInterval(syncPoll, 1000);
+    checkCelebrations();
     onChildAdded(ref(db, "events"), (snap) => {
       const d = snap.val();
       if (!d || typeof d.timestamp !== "number") return;
@@ -1337,8 +1620,7 @@
         const im = document.createElement("img");
         im.className = "gif-message photo-message";
         im.referrerPolicy = "no-referrer";
-        loadDriveImage(im, data.driveId);
-        im.addEventListener("load", () => { chatBox.scrollTop = chatBox.scrollHeight; });
+        if (data.preview) im.src = data.preview;
         const link = document.createElement("a");
         link.className = "full-link";
         link.href = "https://drive.google.com/file/d/" + data.driveId + "/view";
@@ -1346,6 +1628,11 @@
         link.rel = "noopener";
         link.textContent = "⬇ full resolution";
         link.addEventListener("click", (e) => e.stopPropagation());
+        loadDriveImage(im, data.driveId, !!data.preview, () => {
+          im.style.display = "none";
+          link.textContent = "📷 can't preview here, open in Drive";
+        });
+        im.addEventListener("load", () => { chatBox.scrollTop = chatBox.scrollHeight; });
         content.append(im, link);
       } else if (data.type === "gif" || data.type === "image") {
         content = document.createElement("img");
@@ -1354,6 +1641,7 @@
         content.addEventListener("load", () => { chatBox.scrollTop = chatBox.scrollHeight; });
       } else {
         content = document.createElement("div");
+        content.className = "msg-text";
         content.textContent = data.text;
         if (SINGLE_EMOJI_RE.test((data.text || "").trim())) { content.className = "big-emoji"; msg.classList.add("emoji-only"); }
       }
