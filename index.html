@@ -328,6 +328,15 @@
   .cel-from { margin-top:0.8em; font-size:0.82em; color:var(--text-dim); }
   .cel-close { display:inline-block; margin-top:1.1em; padding:0.7em 1.8em; border-radius:26px; background:linear-gradient(135deg,var(--pink),var(--peach)); color:#241627; font-family:'Fredoka',sans-serif; font-weight:600; cursor:pointer; user-select:none; }
 
+  #lock-screen {
+    flex: 1; display:none; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:2em 1.4em; gap:0.5em;
+  }
+  #lock-screen .lock-emoji { font-size:3rem; }
+  #lock-screen .lock-title { font-family:'Fredoka',sans-serif; font-weight:600; font-size:1.35em; color:var(--pink); }
+  #lock-screen .lock-sub { font-size:0.9em; color:var(--text-dim); max-width:320px; line-height:1.5; }
+  #lock-screen .lock-tries { margin-top:0.6em; font-size:0.78em; opacity:0.6; }
+
   /* drag & drop / paste photos */
   #drop-overlay {
     position:absolute; inset:0; z-index:1500; display:none; flex-direction:column;
@@ -522,6 +531,13 @@
 <body>
 <header><span class="heart">😘</span> K &amp; K chat <span class="heart">💖</span></header>
 
+<div id="lock-screen">
+  <div class="lock-emoji">🔒</div>
+  <div class="lock-title">chat locked</div>
+  <div class="lock-sub">Too many wrong PIN attempts. Ask Kartik to unlock it from the Firebase Realtime Database.</div>
+  <div class="lock-tries" id="lock-since"></div>
+</div>
+
 <div id="pin-screen">
   <p>Hi cutie,secret code? 🔐</p>
   <div id="pin-inputs">
@@ -594,8 +610,8 @@
   // --- Google Drive photo storage (see setup steps) ---
   // Paste your Apps Script "Web app" URL and the same secret word you put in the script.
   // Leave DRIVE_URL empty to keep sending smaller photos through the database instead.
-  const DRIVE_URL = "https://script.google.com/macros/s/AKfycbzibLhRlUeONslgtgVcot5DtIHw9mPLXfFwf4wkR8BFUJInQoOaPPF_JXVoNj3NrSyWfQ/exec";
-  const DRIVE_SECRET = "KproDrive";
+  const DRIVE_URL = "";
+  const DRIVE_SECRET = "";
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
@@ -629,12 +645,35 @@
     return wrap;
   }
 
-  // --- PIN gate ---
+  // --- PIN gate, with a lockout after 3 wrong attempts (reset it from Firebase: security/locked -> false) ---
   const PIN_CODE = "2626"; // 🔑 change this to your own 4-digit PIN
+  const MAX_PIN_TRIES = 3;
   const pinScreen = document.getElementById("pin-screen");
   const loginScreen = document.getElementById("login");
+  const lockScreen = document.getElementById("lock-screen");
+  const lockSince = document.getElementById("lock-since");
   const pinDigits = Array.from(document.querySelectorAll(".pin-digit"));
-  pinDigits[0].focus();
+
+  let securityState = null, pinUsable = false;
+  onValue(ref(db, "security"), (snap) => {
+    securityState = snap.val() || {};
+    const locked = !!securityState.locked;
+    if (locked) {
+      pinUsable = false;
+      pinScreen.style.display = "none";
+      lockScreen.style.display = "flex";
+      lockSince.textContent = securityState.lockedAt
+        ? "locked since " + new Date(securityState.lockedAt).toLocaleString()
+        : "";
+    } else {
+      pinUsable = true;
+      lockScreen.style.display = "none";
+      if (loginScreen.style.display !== "flex") {
+        pinScreen.style.display = "flex";
+        pinDigits[0].focus();
+      }
+    }
+  });
 
   function handleDigitInput(digit, i) {
     digit.value = digit.value.replace(/[^0-9]/g, "").slice(0, 1);
@@ -650,6 +689,7 @@
     });
     digit.addEventListener("paste", (e) => {
       e.preventDefault();
+      if (!pinUsable) return;
       const pasted = (e.clipboardData || window.clipboardData).getData("text").replace(/[^0-9]/g, "");
       pinDigits.forEach((d, idx) => { d.value = pasted[idx] || ""; });
       const nextEmpty = pinDigits.findIndex(d => !d.value);
@@ -658,13 +698,23 @@
     });
   });
   function checkPin() {
+    if (!pinUsable) return;
     const entered = pinDigits.map(d => d.value).join("");
+    pinDigits.forEach(d => d.value = "");
     if (entered === PIN_CODE) {
+      set(ref(db, "security/failedAttempts"), 0);
       pinScreen.style.display = "none";
       loginScreen.style.display = "flex";
+      return;
+    }
+    pinDigits.forEach(d => d.classList.add("error"));
+    pinDigits[0].focus();
+    const tries = ((securityState && securityState.failedAttempts) || 0) + 1;
+    if (tries >= MAX_PIN_TRIES) {
+      set(ref(db, "security"), { locked: true, lockedAt: Date.now(), failedAttempts: tries });
     } else {
-      pinDigits.forEach(d => { d.classList.add("error"); d.value = ""; });
-      pinDigits[0].focus();
+      set(ref(db, "security/failedAttempts"), tries);
+      showToast((MAX_PIN_TRIES - tries) + (MAX_PIN_TRIES - tries === 1 ? " try left 🥺" : " tries left 🥺"), 2200);
     }
   }
   // --- end PIN gate ---
